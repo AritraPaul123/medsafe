@@ -1,86 +1,111 @@
-// lib/services/notification_services.dart
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:medsafe/controllers/sos_controller.dart';
-import 'package:medsafe/main.dart'; // for navigatorKey if you keep it there
 
 class NotificationService {
   static final _plugin = FlutterLocalNotificationsPlugin();
-  static const _channelId = 'sos_quick';
-  static const _channelName = 'SOS Quick Action';
-  static const _channelDesc = 'Quick SOS button on lock screen';
-  static const _notifId = 1001;
+  static GlobalKey<NavigatorState>? _navKey;
 
-  static Future<void> init() async {
-    const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
-    final initSettings = InitializationSettings(android: androidInit);
+  static const _channelId = 'sos_channel';
+  static const _channelName = 'SOS';
+  static const _channelDesc = 'Emergency alerts';
 
+  @pragma('vm:entry-point') // needed for background taps on Android
+  static void _onBackgroundTap(NotificationResponse r) {
+    // no-op; just registering the callback keeps Android happy
+  }
+
+  static Future<void> init(GlobalKey<NavigatorState> navigatorKey) async {
+    _navKey = navigatorKey;
+
+    const initAndroid = AndroidInitializationSettings('@mipmap/ic_launcher');
     await _plugin.initialize(
-      initSettings,
-      onDidReceiveNotificationResponse: (resp) {
-        final payload = resp.payload ?? '';
-        if (payload == 'medsafe://sos') {
-          final ctx = navigatorKey.currentContext;
-          if (ctx != null) SosController.activateSOS(ctx);
-        }
-      },
-      onDidReceiveBackgroundNotificationResponse: notificationTapBackground,
+      const InitializationSettings(android: initAndroid),
+      onDidReceiveNotificationResponse: (resp) => _handleTap(resp.payload),
+      onDidReceiveBackgroundNotificationResponse: _onBackgroundTap,
     );
 
+    // Android 13+ runtime notif permission
     if (Platform.isAndroid) {
+      if (await Permission.notification.isDenied) {
+        await Permission.notification.request();
+      }
+      // High-importance channel for full-screen intents
       final androidImpl = _plugin.resolvePlatformSpecificImplementation<
           AndroidFlutterLocalNotificationsPlugin>();
-
-      // Android 13+ runtime permission
-      await androidImpl?.requestNotificationsPermission();
-
-      // High-importance, lock-screen visible channel
-      const channel = AndroidNotificationChannel(
+      await androidImpl
+          ?.createNotificationChannel(const AndroidNotificationChannel(
         _channelId,
         _channelName,
         description: _channelDesc,
         importance: Importance.max,
-        playSound: false,
-        showBadge: false,
-      );
-      await androidImpl?.createNotificationChannel(channel);
+        playSound: true,
+        enableVibration: true,
+      ));
+    }
+
+    // If app was launched by a full-screen notif (cold start), handle it
+    final launch = await _plugin.getNotificationAppLaunchDetails();
+    if (launch?.didNotificationLaunchApp ?? false) {
+      final payload = launch!.notificationResponse?.payload;
+      if (payload == 'sos') {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _runSos());
+      }
     }
   }
 
-  static Future<void> showSosQuickAction() async {
-    if (!Platform.isAndroid) return;
+  static void _handleTap(String? payload) {
+    if (payload == 'sos') _runSos();
+  }
 
+  static void _runSos() {
+    final ctx = _navKey?.currentContext;
+    if (ctx != null) {
+      SosController.activateSOS(ctx);
+    }
+  }
+
+  /// Post a **full-screen** notification that wakes screen and opens the app
+  static Future<void> showSosFullScreen() async {
     const android = AndroidNotificationDetails(
       _channelId,
       _channelName,
       channelDescription: _channelDesc,
       importance: Importance.max,
       priority: Priority.max,
-      visibility: NotificationVisibility.public, // <- show on lock screen
-      category: AndroidNotificationCategory.service,
-      ongoing: true, // <- persistent
-      autoCancel: false,
-      onlyAlertOnce: true,
+      category: AndroidNotificationCategory.call, // eligible for full-screen
+      fullScreenIntent: true,
+      visibility: NotificationVisibility.public,
+      autoCancel: true,
     );
 
     await _plugin.show(
-      _notifId,
-      'SOS Emergency',
-      'Tap to activate SOS',
+      1001,
+      'Emergency SOS',
+      'Tap to open SOS controls',
       const NotificationDetails(android: android),
-      payload: 'medsafe://sos', // handled in initialize() above
+      payload: 'sos',
     );
   }
 
-  static Future<void> cancelQuickAction() async {
-    await _plugin.cancel(_notifId);
+  /// (Optional) a small quick-action notification (heads-up only)
+  static Future<void> showSosQuickAction() async {
+    const android = AndroidNotificationDetails(
+      _channelId,
+      _channelName,
+      channelDescription: _channelDesc,
+      importance: Importance.high,
+      priority: Priority.high,
+      visibility: NotificationVisibility.public,
+    );
+    await _plugin.show(
+      1002,
+      'SOS',
+      'Tap to open SOS',
+      const NotificationDetails(android: android),
+      payload: 'sos',
+    );
   }
-}
-
-// Background tap handler (required by plugin >= 10)
-@pragma('vm:entry-point')
-void notificationTapBackground(NotificationResponse response) {
-  // On cold start, plugin will forward this to onDidReceive... after init,
-  // so we generally don’t need to do anything special here.
 }

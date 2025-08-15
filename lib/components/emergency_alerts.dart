@@ -1,11 +1,12 @@
+// lib/widgets/emergency_alerts.dart
 import 'package:flutter/material.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:lucide_icons/lucide_icons.dart';
+
 import 'package:medsafe/utils/location_utils.dart';
 import 'package:medsafe/utils/communication_service.dart';
 import 'package:medsafe/utils/models.dart';
 import 'package:medsafe/utils/storage_utils.dart';
 import 'package:medsafe/widgets/toast.dart';
-import 'package:lucide_icons/lucide_icons.dart';
 
 class EmergencyAlert extends StatefulWidget {
   const EmergencyAlert({super.key});
@@ -15,21 +16,21 @@ class EmergencyAlert extends StatefulWidget {
 }
 
 class _EmergencyAlertState extends State<EmergencyAlert> {
-  bool isLoading = false;
+  bool _isLoading = false;
 
-  Future<void> sendEmergencyAlert() async {
-    setState(() => isLoading = true);
+  Future<void> _sendEmergencyAlert() async {
+    if (!mounted) return;
+    setState(() => _isLoading = true);
 
     try {
       final contacts = await StorageUtils.getEmergencyContacts();
       if (contacts.isEmpty) {
         showToast(
           context,
-          title: "No Emergency Contacts",
-          description: "Please add emergency contacts before sending alerts",
+          title: 'No emergency contacts',
+          description: 'Add at least one contact before sending alerts.',
           isError: true,
         );
-        setState(() => isLoading = false);
         return;
       }
 
@@ -43,134 +44,138 @@ class _EmergencyAlertState extends State<EmergencyAlert> {
       );
 
       final phoneNumbers = contacts.map((c) => c.phone).toList();
-
       await CommunicationUtils.sendEmergencyAlerts(
           phoneNumbers, emergencyMessage);
 
-      await StorageUtils.saveLocation(UserLocation(
-        latitude: location.latitude,
-        longitude: location.longitude,
-        timestamp: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await StorageUtils.saveLocation(
+        UserLocation(
+          latitude: location.latitude,
+          longitude: location.longitude,
+          timestamp: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
 
       showToast(
         context,
-        title: "Emergency Alerts Sent!",
-        description: "Alerts sent to ${contacts.length} contact(s)",
+        title: 'Emergency alerts sent',
+        description: 'Sent to ${contacts.length} contact(s).',
       );
     } catch (e) {
       showToast(
         context,
-        title: "Alert Failed",
+        title: 'Alert failed',
         description: e.toString(),
         isError: true,
       );
     } finally {
-      setState(() => isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+
     return Card(
-      color: const Color(0xFF7F1D1D).withOpacity(0.6),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Icon
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFDC2626).withOpacity(0.2),
-                borderRadius: BorderRadius.circular(20),
-                border:
-                    Border.all(color: const Color(0xFFF87171).withOpacity(0.3)),
-              ),
-              child: const Icon(
-                LucideIcons.alertTriangle,
-                color: Color(0xFFFCA5A5),
-                size: 32,
-              ),
+            // Header row
+            Row(
+              children: [
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: cs.error.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(LucideIcons.alertTriangle, color: cs.error),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text('Emergency Alert', style: t.textTheme.titleLarge),
+                ),
+              ],
             ),
-            const SizedBox(height: 12),
 
-            // Heading
-            const Text(
-              "Emergency Alert",
-              style: TextStyle(
-                fontSize: 20,
-                fontWeight: FontWeight.bold,
-                color: Color(0xFFFECACA),
-              ),
-            ),
             const SizedBox(height: 16),
 
-            // Info
+            // Info block
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFB91C1C).withOpacity(0.5),
-                borderRadius: BorderRadius.circular(10),
-                border:
-                    Border.all(color: const Color(0xFFEF4444).withOpacity(0.3)),
+                color: cs.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: cs.outline.withOpacity(0.6)),
               ),
-              child: const Column(
+              child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    "This will:",
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                    ),
-                  ),
-                  SizedBox(height: 6),
-                  Text("• Get your current location",
-                      style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  Text("• Send SMS to all emergency contacts",
-                      style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  Text("• Include Google Maps link to your location",
-                      style: TextStyle(color: Colors.white70, fontSize: 12)),
-                  Text("• Include your custom emergency message",
-                      style: TextStyle(color: Colors.white70, fontSize: 12)),
+                  Text('This will:', style: t.textTheme.labelLarge),
+                  const SizedBox(height: 6),
+                  _InfoLine(text: 'Get your current location'),
+                  _InfoLine(text: 'Send SMS to all emergency contacts'),
+                  _InfoLine(text: 'Include a Google Maps link'),
+                  _InfoLine(text: 'Include your custom emergency message'),
                 ],
               ),
             ),
+
             const SizedBox(height: 20),
 
-            // Button
+            // Primary action
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
-                onPressed: isLoading ? null : sendEmergencyAlert,
-                icon: isLoading
-                    ? const SpinKitFadingCircle(color: Colors.white, size: 20)
+                onPressed: _isLoading ? null : _sendEmergencyAlert,
+                icon: _isLoading
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
                     : const Icon(LucideIcons.messageSquare),
-                label: Text(
-                  isLoading
-                      ? "Sending Emergency Alert..."
-                      : "SEND EMERGENCY ALERT",
-                  style: const TextStyle(fontSize: 14),
-                ),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.red.shade700,
-                  padding: const EdgeInsets.symmetric(vertical: 14),
-                ),
+                label: Text(_isLoading
+                    ? 'Sending emergency alert…'
+                    : 'Send emergency alert'),
               ),
             ),
+
             const SizedBox(height: 10),
 
-            // Footer Note
-            const Text(
-              "Only use in real emergencies. This will send SMS messages to your emergency contacts.",
+            // Footer note
+            Text(
+              'Use only in real emergencies. This will send SMS messages to your emergency contacts.',
               textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFFFECACA), fontSize: 11),
-            )
+              style: t.textTheme.bodySmall,
+            ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _InfoLine extends StatelessWidget {
+  final String text;
+  const _InfoLine({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        children: [
+          const Icon(Icons.check, size: 16),
+          const SizedBox(width: 8),
+          Expanded(child: Text(text, style: t.textTheme.bodySmall)),
+        ],
       ),
     );
   }

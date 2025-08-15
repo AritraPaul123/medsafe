@@ -30,10 +30,10 @@ class ExpiryNotifier {
         'Expires on ${DateFormat('dd MMM yyyy').format(expiryDate)}',
         tz.TZDateTime.from(when, tz.local),
         details,
-        androidAllowWhileIdle: true,
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         matchDateTimeComponents: DateTimeComponents.dateAndTime,
+        androidScheduleMode: AndroidScheduleMode.exact,
       );
     }
 

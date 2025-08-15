@@ -1,3 +1,4 @@
+// lib/pages/first_aid_info.dart
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
 
@@ -6,134 +7,147 @@ class FirstAidInfoPage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final firstAidSteps = [
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+
+    final firstAidSteps = const [
       {
-        "title": "Check for Consciousness",
-        "description": "Gently shake shoulders and shout 'Are you okay?'",
+        "title": "Check for consciousness",
+        "description": "Gently tap the shoulders and ask, Are you okay?",
       },
       {
-        "title": "Call for Help",
-        "description": "Call emergency services immediately (911/112)",
+        "title": "Call for help",
+        "description": "Contact local emergency services immediately.",
       },
       {
-        "title": "Check Breathing",
-        "description": "Look, listen, and feel for normal breathing",
+        "title": "Check breathing",
+        "description": "Look, listen, and feel for normal breathing.",
       },
       {
-        "title": "Control Bleeding",
-        "description": "Apply direct pressure with clean cloth",
+        "title": "Control bleeding",
+        "description": "Apply firm, direct pressure with a clean cloth.",
       },
       {
-        "title": "Treat for Shock",
-        "description": "Keep person warm and elevate legs if possible",
+        "title": "Treat for shock",
+        "description": "Keep them warm and elevate legs if safe to do so.",
       },
+    ];
+
+    final emergencyNumbers = const [
+      {"label": "General Emergency", "number": "911 / 112"},
+      {"label": "Poison Control", "number": "1-800-222-1222"},
+      {"label": "Crisis Hotline", "number": "988"},
     ];
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text("First Aid Info"),
-        backgroundColor: Colors.red.shade400,
-        foregroundColor: Colors.white,
+        title: const Text('First Aid Info'),
+        // AppBar colors come from theme; no overrides = cleaner + consistent
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
+      body: SafeArea(
+        minimum: const EdgeInsets.all(16),
         child: ListView(
           children: [
+            // Header row
             Row(
               children: [
-                const Icon(LucideIcons.alertTriangle, color: Colors.redAccent),
-                const SizedBox(width: 8),
-                Text(
-                  "Basic First Aid Steps",
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.red.shade200,
+                Container(
+                  width: 48,
+                  height: 48,
+                  decoration: BoxDecoration(
+                    color: cs.primary.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(LucideIcons.alertTriangle, color: cs.primary),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'Basic First Aid Steps',
+                    style: t.textTheme.titleLarge,
                   ),
                 ),
               ],
             ),
+
             const SizedBox(height: 16),
+
+            // Steps
             ...firstAidSteps.asMap().entries.map((entry) {
-              int index = entry.key;
-              var step = entry.value;
+              final index = entry.key + 1;
+              final step = entry.value;
               return Card(
-                color: Colors.red.shade50,
                 margin: const EdgeInsets.only(bottom: 12),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
                 child: ListTile(
                   leading: CircleAvatar(
-                    backgroundColor: Colors.red,
-                    foregroundColor: Colors.white,
-                    radius: 14,
+                    radius: 16,
+                    backgroundColor: cs.primary,
+                    foregroundColor: cs.onPrimary,
                     child: Text(
-                      '${index + 1}',
+                      '$index',
                       style: const TextStyle(
-                          fontSize: 12, fontWeight: FontWeight.bold),
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
                     ),
                   ),
                   title: Text(
                     step['title']!,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      color: Colors.red.shade800,
+                    style: t.textTheme.bodyLarge?.copyWith(
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                   subtitle: Text(
                     step['description']!,
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.red.shade600,
-                    ),
+                    style: t.textTheme.bodySmall,
                   ),
                 ),
               );
             }),
-            const SizedBox(height: 16),
+
+            const SizedBox(height: 8),
+
+            // Emergency numbers
             Card(
-              color: Colors.red.shade100,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
               child: Padding(
-                padding: const EdgeInsets.all(12.0),
+                padding: const EdgeInsets.all(12),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        const Icon(LucideIcons.phone,
-                            size: 16, color: Colors.red),
-                        const SizedBox(width: 6),
-                        Text(
-                          "Emergency Numbers",
-                          style: TextStyle(
-                            fontWeight: FontWeight.w600,
-                            color: Colors.red.shade900,
-                          ),
-                        ),
+                        Icon(LucideIcons.phone, size: 18, color: cs.primary),
+                        const SizedBox(width: 8),
+                        Text('Emergency Numbers',
+                            style: t.textTheme.titleMedium),
                       ],
                     ),
                     const SizedBox(height: 8),
-                    ...[
-                      {"label": "General Emergency", "number": "911"},
-                      {"label": "Poison Control", "number": "1-800-222-1222"},
-                      {"label": "Crisis Hotline", "number": "988"},
-                    ].map((e) => Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 2.0),
+                    ...emergencyNumbers.map((e) => Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4),
                           child: Text(
-                            "• ${e['label']}: ${e['number']}",
-                            style: TextStyle(
-                              fontSize: 13,
-                              color: Colors.red.shade800,
+                            '• ${e['label']}: ${e['number']}',
+                            style: t.textTheme.bodySmall?.copyWith(
                               fontWeight: FontWeight.w500,
                             ),
                           ),
                         )),
+                    const SizedBox(height: 8),
+                    Text(
+                      'Tip: Save these numbers in your contacts.',
+                      style: t.textTheme.bodySmall,
+                    ),
                   ],
                 ),
               ),
+            ),
+
+            const SizedBox(height: 12),
+
+            // Footer note
+            Text(
+              'This information is for guidance only. If someone is in danger, call your local emergency number immediately.',
+              style: t.textTheme.bodySmall,
             ),
           ],
         ),

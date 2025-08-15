@@ -1,6 +1,9 @@
+// lib/widgets/sos_button.dart
 import 'package:flutter/material.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
+
+import 'package:medsafe/widgets/toast.dart';
 
 class SOSButton extends StatefulWidget {
   const SOSButton({super.key});
@@ -10,12 +13,66 @@ class SOSButton extends StatefulWidget {
 }
 
 class _SOSButtonState extends State<SOSButton> {
-  bool isActivating = false;
+  bool _isActivating = false;
 
-  Future<void> activateSOS() async {
-    setState(() {
-      isActivating = true;
-    });
+  Future<void> _confirmAndActivate() async {
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+
+    final ok = await showModalBottomSheet<bool>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: false,
+      showDragHandle: true,
+      backgroundColor: cs.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.warning_amber_rounded, color: cs.error, size: 40),
+            const SizedBox(height: 8),
+            Text('Activate SOS?', style: t.textTheme.titleLarge),
+            const SizedBox(height: 8),
+            Text(
+              'This will send your location and emergency note to your contacts, then place a call to the first contact.',
+              style: t.textTheme.bodyMedium,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                icon: const Icon(Icons.sos),
+                label: const Text('Send SOS now'),
+                onPressed: () => Navigator.of(ctx).pop(true),
+              ),
+            ),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: const Text('Cancel'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (ok == true) {
+      await _activateSOS();
+    }
+  }
+
+  Future<void> _activateSOS() async {
+    if (!mounted) return;
+    setState(() => _isActivating = true);
+    HapticFeedback.selectionClick();
 
     try {
       // Get current location
@@ -24,6 +81,16 @@ class _SOSButtonState extends State<SOSButton> {
       // Get medical info and contacts
       final medicalInfo = await getMedicalInfo();
       final contacts = await getEmergencyContacts();
+
+      if (contacts.isEmpty) {
+        showToast(
+          context,
+          title: 'No contacts found',
+          description: 'Add emergency contacts before using SOS.',
+          isError: true,
+        );
+        return;
+      }
 
       // Create emergency message with location
       final emergencyMessage =
@@ -35,67 +102,89 @@ class _SOSButtonState extends State<SOSButton> {
       // Save location
       await saveLocation(location);
 
-      // Call first contact
-      if (contacts.isNotEmpty) {
-        Future.delayed(const Duration(seconds: 2), () {
-          makePhoneCall(contacts[0]['phone']);
+      // Call first contact after a short pause
+      Future.delayed(const Duration(seconds: 2), () {
+        makePhoneCall(contacts[0]['phone']);
+        if (mounted) {
           showToast(
-              "Calling Emergency Contact", "Calling ${contacts[0]['name']}...");
-        });
-      }
-
-      showToast("SOS Activated!", "Emergency alert sent with your location");
-    } catch (e) {
-      showToast("SOS Failed", e.toString(), isError: true);
-    } finally {
-      setState(() {
-        isActivating = false;
+            context,
+            title: 'Calling emergency contact',
+            description: 'Calling ${contacts[0]['name']}…',
+          );
+        }
       });
+
+      if (mounted) {
+        showToast(
+          context,
+          title: 'SOS activated',
+          description: 'Location sent to your contacts.',
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        showToast(
+          context,
+          title: 'SOS failed',
+          description: e.toString(),
+          isError: true,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isActivating = false);
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          ElevatedButton(
-            onPressed: isActivating ? null : activateSOS,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.red[600],
-              shape: const CircleBorder(),
-              padding: const EdgeInsets.all(32),
-              elevation: 10,
+          // Big round SOS button
+          Semantics(
+            button: true,
+            label: _isActivating ? 'Activating SOS' : 'Activate SOS',
+            child: ElevatedButton(
+              onPressed: _isActivating ? null : _confirmAndActivate,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: cs.error,
+                foregroundColor: cs.onError,
+                shape: const CircleBorder(),
+                padding: const EdgeInsets.all(32),
+                elevation: 2,
+              ),
+              child: _isActivating
+                  ? const SizedBox(
+                      height: 48,
+                      width: 48,
+                      child: CircularProgressIndicator(strokeWidth: 3),
+                    )
+                  : const Icon(Icons.sos, size: 48),
             ),
-            child: isActivating
-                ? const SizedBox(
-                    height: 48,
-                    width: 48,
-                    child: CircularProgressIndicator(color: Colors.white),
-                  )
-                : const Icon(Icons.warning, size: 48, color: Colors.white),
           ),
           const SizedBox(height: 16),
           Text(
-            isActivating ? 'ACTIVATING SOS...' : 'ACTIVATE SOS',
-            style: const TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: Colors.redAccent),
+            _isActivating ? 'Activating SOS…' : 'Activate SOS',
+            style: t.textTheme.headlineMedium?.copyWith(color: cs.error),
           ),
           const SizedBox(height: 8),
           Text(
-            isActivating
-                ? 'Getting your location and sending emergency alert...'
-                : 'Press to send your location to emergency contacts and call for help',
+            _isActivating
+                ? 'Getting your location and sending alerts…'
+                : 'Sends your location to emergency contacts and initiates a call.',
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.red, fontSize: 14),
+            style: t.textTheme.bodyMedium,
           ),
         ],
       ),
     );
   }
+
+  // --- Replace these with your real implementations/services as needed ---
 
   Future<Map<String, dynamic>> getCurrentLocation() async {
     // Simulate fetching current location
@@ -106,7 +195,8 @@ class _SOSButtonState extends State<SOSButton> {
     // Simulate retrieving stored medical info
     return {
       'bloodType': 'O+',
-      'conditions': ['Asthma']
+      'conditions': ['Asthma'],
+      'note': 'Carry inhaler',
     };
   }
 
@@ -118,41 +208,43 @@ class _SOSButtonState extends State<SOSButton> {
   }
 
   String createEmergencyWhatsAppMessage(
-      Map<String, dynamic> location, Map<String, dynamic> medicalInfo) {
-    return "Emergency! My location is ${location['latitude']}, ${location['longitude']}. Blood type: ${medicalInfo['bloodType']}. Conditions: ${medicalInfo['conditions'].join(",")}";
+    Map<String, dynamic> location,
+    Map<String, dynamic> medicalInfo,
+  ) {
+    final lat = location['latitude'];
+    final lng = location['longitude'];
+    final maps = 'https://www.google.com/maps?q=$lat,$lng';
+    final cond = (medicalInfo['conditions'] as List?)?.join(', ') ?? 'None';
+    final note = (medicalInfo['note'] ?? '').toString();
+
+    return 'EMERGENCY!\n'
+        'My location: $maps\n'
+        'Blood type: ${medicalInfo['bloodType']}\n'
+        'Conditions: $cond\n'
+        '${note.isNotEmpty ? 'Note: $note' : ''}';
   }
 
   Future<void> shareViaWhatsApp(String message) async {
     final uri =
-        Uri.parse("https://wa.me/?text=${Uri.encodeComponent(message)}");
+        Uri.parse('https://wa.me/?text=${Uri.encodeComponent(message)}');
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      throw Exception("Could not launch WhatsApp");
+      throw Exception('Could not launch WhatsApp');
     }
   }
 
   Future<void> saveLocation(Map<String, dynamic> location) async {
     // Simulate saving location
-    debugPrint("Location saved: $location");
+    debugPrint('Location saved: $location');
   }
 
   Future<void> makePhoneCall(String phoneNumber) async {
-    final uri = Uri.parse("tel:$phoneNumber");
+    final uri = Uri.parse('tel:$phoneNumber');
     if (await canLaunchUrl(uri)) {
-      await launchUrl(uri);
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } else {
-      throw Exception("Could not place call");
+      throw Exception('Could not place call');
     }
-  }
-
-  void showToast(String title, String description, {bool isError = false}) {
-    final color = isError ? Colors.red : Colors.green;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text("$title\n$description"),
-        backgroundColor: color,
-      ),
-    );
   }
 }

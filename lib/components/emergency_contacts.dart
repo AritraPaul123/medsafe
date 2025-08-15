@@ -1,5 +1,7 @@
+// lib/widgets/emergency_contacts.dart
 import 'package:flutter/material.dart';
 import 'package:lucide_icons/lucide_icons.dart';
+
 import 'package:medsafe/utils/communication_service.dart';
 import 'package:medsafe/utils/models.dart';
 import 'package:medsafe/utils/storage_utils.dart';
@@ -13,238 +15,337 @@ class EmergencyContacts extends StatefulWidget {
 }
 
 class _EmergencyContactsState extends State<EmergencyContacts> {
-  List<EmergencyContact> contacts = [];
-  bool isAdding = false;
-  String name = '';
-  String phone = '';
+  static const int _maxContacts = 3;
+
+  List<EmergencyContact> _contacts = [];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    loadContacts();
+    _loadContacts();
   }
 
-  void loadContacts() async {
-    final savedContacts = await StorageUtils.getEmergencyContacts();
-    setState(() => contacts = savedContacts);
-  }
-
-  void saveContacts(List<EmergencyContact> updated) {
-    setState(() => contacts = updated);
-    StorageUtils.saveEmergencyContacts(updated);
-  }
-
-  void addContact() {
-    if (name.trim().isEmpty || phone.trim().isEmpty) return;
-
-    if (contacts.length >= 3) {
-      showToast(context,
-          title: "Maximum Contacts",
-          description: "You can only save up to 3 emergency contacts",
-          isError: true);
-      return;
-    }
-
-    final contact = EmergencyContact(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      name: name.trim(),
-      phone: phone.trim(),
-    );
-
-    saveContacts([...contacts, contact]);
-    showToast(context,
-        title: "Contact Added",
-        description: "${contact.name} has been added to emergency contacts");
-
+  Future<void> _loadContacts() async {
+    final saved = await StorageUtils.getEmergencyContacts();
+    if (!mounted) return;
     setState(() {
-      name = '';
-      phone = '';
-      isAdding = false;
+      _contacts = saved;
+      _loading = false;
     });
   }
 
-  void removeContact(String id) {
-    final updated = contacts.where((c) => c.id != id).toList();
-    saveContacts(updated);
-    showToast(context,
-        title: "Contact Removed",
-        description: "Emergency contact has been removed");
+  Future<void> _saveContacts(List<EmergencyContact> updated) async {
+    setState(() => _contacts = updated);
+    await StorageUtils.saveEmergencyContacts(updated);
   }
 
-  void callContact(EmergencyContact contact) {
+  Future<void> _addContactTap() async {
+    if (_contacts.length >= _maxContacts) {
+      showToast(
+        context,
+        title: 'Maximum contacts',
+        description: 'You can save up to $_maxContacts emergency contacts.',
+        isError: true,
+      );
+      return;
+    }
+    await _openAddEditSheet();
+  }
+
+  Future<void> _openAddEditSheet({EmergencyContact? existing}) async {
+    final t = Theme.of(context);
+    final formKey = GlobalKey<FormState>();
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final phoneCtrl = TextEditingController(text: existing?.phone ?? '');
+
+    await showModalBottomSheet<void>(
+      context: context,
+      useSafeArea: true,
+      isScrollControlled: true,
+      showDragHandle: true,
+      backgroundColor: t.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        final inset = MediaQuery.of(sheetCtx).viewInsets.bottom;
+        return Padding(
+          padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + inset),
+          child: Form(
+            key: formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    existing == null ? 'Add Emergency Contact' : 'Edit Contact',
+                    style: t.textTheme.titleLarge,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: nameCtrl,
+                  textInputAction: TextInputAction.next,
+                  decoration: const InputDecoration(
+                    labelText: 'Name',
+                    hintText: 'Full name',
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: 12),
+                TextFormField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Phone number',
+                    hintText: 'e.g. +91 98xxxxxx',
+                  ),
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Required' : null,
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    icon: const Icon(Icons.check),
+                    label: Text(
+                        existing == null ? 'Save Contact' : 'Save Changes'),
+                    onPressed: () async {
+                      if (!(formKey.currentState?.validate() ?? false)) return;
+
+                      final newContact = EmergencyContact(
+                        id: existing?.id ??
+                            DateTime.now().millisecondsSinceEpoch.toString(),
+                        name: nameCtrl.text.trim(),
+                        phone: phoneCtrl.text.trim(),
+                      );
+
+                      final updated = [..._contacts];
+                      final idx =
+                          updated.indexWhere((c) => c.id == newContact.id);
+                      if (idx >= 0) {
+                        updated[idx] = newContact;
+                      } else {
+                        updated.add(newContact);
+                      }
+                      await _saveContacts(updated);
+                      if (mounted) Navigator.of(sheetCtx).pop();
+                      if (mounted) {
+                        showToast(
+                          context,
+                          title: existing == null
+                              ? 'Contact added'
+                              : 'Contact updated',
+                          description: newContact.name,
+                        );
+                      }
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _removeContact(String id) async {
+    final c = _contacts.firstWhere((e) => e.id == id);
+    final ok = await showDialog<bool>(
+      context: context,
+      useRootNavigator: true,
+      builder: (dCtx) => AlertDialog(
+        title: const Text('Delete contact?'),
+        content: Text('Remove ${c.name} (${c.phone}) from your contacts.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dCtx, rootNavigator: true).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(dCtx, rootNavigator: true).pop(true),
+            style: FilledButton.styleFrom(
+              backgroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (ok ?? false) {
+      final updated = _contacts.where((e) => e.id != id).toList();
+      await _saveContacts(updated);
+      if (mounted) {
+        showToast(context, title: 'Contact removed', description: c.name);
+      }
+    }
+  }
+
+  Future<void> _callContact(EmergencyContact contact) async {
     CommunicationUtils.makePhoneCall(contact.phone);
-    showToast(context,
-        title: "Calling", description: "Calling ${contact.name}...");
+    showToast(context, title: 'Calling', description: contact.name);
   }
 
   @override
   Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final cs = t.colorScheme;
+
     return Card(
-      color: const Color(0xFF6B21A8).withOpacity(0.5),
       child: Padding(
         padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            // Icon
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFF9333EA).withOpacity(0.3),
-                borderRadius: BorderRadius.circular(20),
-                border:
-                    Border.all(color: const Color(0xFF9333EA).withOpacity(0.3)),
-              ),
-              child: const Icon(LucideIcons.phone,
-                  color: Color(0xFFE9D5FF), size: 32),
-            ),
-            const SizedBox(height: 12),
-
-            // Heading
-            Text(
-              "Emergency Contacts (${contacts.length}/3)",
-              style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFFE9D5FF)),
-            ),
-            const SizedBox(height: 16),
-
-            // Contact List
-            ...contacts.map(
-              (contact) => Container(
-                margin: const EdgeInsets.only(bottom: 8),
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF7E22CE).withOpacity(0.4),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: const Color(0xFFC084FC).withOpacity(0.3)),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    // Contact Info
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(contact.name,
-                            style: const TextStyle(
-                                color: Colors.white,
-                                fontWeight: FontWeight.w500)),
-                        const SizedBox(height: 4),
-                        Text(contact.phone,
-                            style: const TextStyle(
-                                color: Colors.white70, fontSize: 12)),
-                      ],
-                    ),
-                    // Action Buttons
-                    Row(
-                      children: [
-                        IconButton(
-                          onPressed: () => callContact(contact),
-                          icon: const Icon(LucideIcons.phoneCall,
-                              color: Colors.greenAccent),
+        child: _loading
+            ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        width: 48,
+                        height: 48,
+                        decoration: BoxDecoration(
+                          color: cs.primary.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        IconButton(
-                          onPressed: () => removeContact(contact.id),
-                          icon: const Icon(LucideIcons.trash2,
-                              color: Colors.redAccent),
-                        ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-
-            if (contacts.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 16),
-                child: Column(
-                  children: [
-                    Icon(LucideIcons.userPlus,
-                        size: 40, color: Color(0xFFD8B4FE)),
-                    SizedBox(height: 8),
-                    Text("No emergency contacts added yet",
-                        style: TextStyle(color: Color(0xFFE9D5FF))),
-                  ],
-                ),
-              ),
-
-            const SizedBox(height: 12),
-
-            // Add contact form
-            if (isAdding)
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF7E22CE).withOpacity(0.3),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: const Color(0xFFC084FC).withOpacity(0.3)),
-                ),
-                child: Column(
-                  children: [
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'Name',
-                        labelStyle: TextStyle(color: Colors.white70),
+                        child: Icon(LucideIcons.phone, color: cs.primary),
                       ),
-                      style: const TextStyle(color: Colors.white),
-                      onChanged: (val) => name = val,
-                    ),
-                    const SizedBox(height: 10),
-                    TextField(
-                      decoration: const InputDecoration(
-                        labelText: 'Phone Number',
-                        labelStyle: TextStyle(color: Colors.white70),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Emergency Contacts (${_contacts.length}/$_maxContacts)',
+                          style: t.textTheme.titleLarge,
+                        ),
                       ),
-                      keyboardType: TextInputType.phone,
-                      style: const TextStyle(color: Colors.white),
-                      onChanged: (val) => phone = val,
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: ElevatedButton(
-                            onPressed: addContact,
-                            style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.deepPurple),
-                            child: const Text("Save Contact"),
-                          ),
+                      if (_contacts.length < _maxContacts)
+                        FilledButton.icon(
+                          onPressed: _addContactTap,
+                          icon: const Icon(Icons.add),
+                          label: const Text('Add'),
                         ),
-                        const SizedBox(width: 10),
-                        ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              isAdding = false;
-                              name = '';
-                              phone = '';
-                            });
-                          },
-                          style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.purple.shade900),
-                          child: const Text("Cancel"),
-                        ),
-                      ],
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  if (_contacts.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      child: Column(
+                        children: [
+                          Icon(LucideIcons.userPlus,
+                              size: 40, color: cs.secondary),
+                          const SizedBox(height: 8),
+                          Text('No emergency contacts yet',
+                              style: t.textTheme.bodyMedium),
+                        ],
+                      ),
                     )
+                  else
+                    ListView.separated(
+                      shrinkWrap: true,
+                      physics: const NeverScrollableScrollPhysics(),
+                      itemCount: _contacts.length,
+                      separatorBuilder: (_, __) => const Divider(),
+                      itemBuilder: (_, i) {
+                        final c = _contacts[i];
+                        return ListTile(
+                          leading: const Icon(Icons.person),
+                          title: Text(c.name, style: t.textTheme.bodyLarge),
+                          subtitle: Text(c.phone, style: t.textTheme.bodySmall),
+                          trailing: PopupMenuButton<String>(
+                            onSelected: (value) {
+                              switch (value) {
+                                case 'call':
+                                  _callContact(c);
+                                  break;
+                                case 'edit':
+                                  _openAddEditSheet(existing: c);
+                                  break;
+                                case 'delete':
+                                  _removeContact(c.id);
+                                  break;
+                              }
+                            },
+                            itemBuilder: (context) => [
+                              const PopupMenuItem(
+                                value: 'call',
+                                child: _MenuRow(
+                                    icon: LucideIcons.phoneCall, label: 'Call'),
+                              ),
+                              const PopupMenuItem(
+                                value: 'edit',
+                                child: _MenuRow(
+                                    icon: LucideIcons.edit, label: 'Edit'),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: _MenuRow(
+                                  icon: LucideIcons.trash2,
+                                  label: 'Delete',
+                                  danger: true,
+                                  color: cs.error,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+
+                  if (_contacts.length >= _maxContacts) ...[
+                    const SizedBox(height: 12),
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: cs.surface,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: cs.outline.withOpacity(0.6)),
+                      ),
+                      child: Text(
+                        'You’ve reached the maximum of $_maxContacts contacts.',
+                        style: t.textTheme.bodySmall,
+                      ),
+                    ),
                   ],
-                ),
-              )
-            else if (contacts.length < 3)
-              ElevatedButton.icon(
-                onPressed: () => setState(() => isAdding = true),
-                icon: const Icon(LucideIcons.plus),
-                label: const Text("Add Emergency Contact"),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.purple.shade800,
-                  foregroundColor: Colors.white,
-                ),
+                ],
               ),
-          ],
-        ),
       ),
+    );
+  }
+}
+
+class _MenuRow extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final bool danger;
+  final Color? color;
+
+  const _MenuRow({
+    required this.icon,
+    required this.label,
+    this.danger = false,
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final t = Theme.of(context);
+    final c = color ?? t.colorScheme.onSurface;
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: c),
+        const SizedBox(width: 8),
+        Text(label,
+            style: TextStyle(color: danger ? c : t.colorScheme.onSurface)),
+      ],
     );
   }
 }

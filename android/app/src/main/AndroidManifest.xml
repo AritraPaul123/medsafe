@@ -7,14 +7,23 @@
 
     <!-- Notifications -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT"/>
+    <!-- (Optional, helps wake the screen reliably) -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
 
     <!-- Optional: Needed if you add Quick Settings tile service -->
     <!-- <uses-permission android:name="android.permission.BIND_QUICK_SETTINGS_TILE" tools:ignore="ProtectedPermissions" /> -->
 
     <application
+        <meta-data
+        android:name="android.support.FILE_PROVIDER_PATHS"
+        android:resource="@xml/file_paths" />
         android:label="medsafe"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
+        <meta-data
+        android:name="com.google.android.geo.API_KEY"
+        android:value="AIzaSyCFT2bpuZamzvz49My7QVc0trVrZHmqLaY"/>
 
         <activity
             android:name=".MainActivity"
